@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vibration/vibration.dart';
@@ -118,6 +121,7 @@ class BingoScreenState extends State<BingoScreen> {
   ];
 
   List<bool> squareStates = List<bool>.filled(25, false);
+  late Map<int, int>? randomMapping = null;
 
   @override
   void initState() {
@@ -128,11 +132,28 @@ class BingoScreenState extends State<BingoScreen> {
 
   Future<void> _loadSquareStates() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Load square pressed states
     List<String>? storedStates = prefs.getStringList('squareStates');
     if (storedStates != null) {
       setState(() {
         squareStates = storedStates.map((state) => state == 'true').toList();
       });
+    }
+
+    // Load mapping for randomizing squares
+    // Retrieve the map
+    Map<int, int>? retrievedMapping = await retrieveMapFromPreferences();
+    if (retrievedMapping != null) {
+      setState(() {
+        randomMapping = retrievedMapping;
+      });
+    } else {
+      setState(() {
+        randomMapping = generateUniqueMapping();
+      });
+
+      await storeMapInPreferences(randomMapping!);
     }
   }
 
@@ -153,26 +174,28 @@ class BingoScreenState extends State<BingoScreen> {
   }
 
   void _showDescriptionDialog(int index) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: Colors.red.shade100,
-          title: Text(
-            shortDescriptions[index].replaceAll('\n', ' '),
-          ),
-          content: Text(
-            longDescriptions[index],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
+    if (randomMapping != null) {
+      showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            backgroundColor: Colors.red.shade100,
+            title: Text(
+              shortDescriptions[randomMapping![index]!].replaceAll('\n', ' '),
             ),
-          ],
-        );
-      },
-    );
+            content: Text(
+              longDescriptions[randomMapping![index]!],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      );
+    }
   }
 
   @override
@@ -183,77 +206,173 @@ class BingoScreenState extends State<BingoScreen> {
       ),
       body: Column(
         children: [
-          // const Row(
-          //   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          //   children: [
-          //     Text(
-          //       'BINGO',
-          //       style: TextStyle(letterSpacing: 40, fontSize: 50),
-          //     ),
-          //   ],
-          // ),
           const SizedBox(height: 8),
           Expanded(
+            flex: 2,
             child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      // Use Expanded to ensure GridView takes available space
-                      child: GridView.builder(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 5,
-                          crossAxisSpacing: 4.0,
-                          mainAxisSpacing: 4.0,
-                        ),
-                        itemCount: 25,
-                        itemBuilder: (context, index) {
-                          bool isActive = squareStates[index];
-                          return GestureDetector(
-                            onTap: () => _toggleSquare(index),
-                            onLongPress: () {
-                              Vibration.vibrate(duration: 20);
-                              _showDescriptionDialog(index);
-                            },
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: isActive ? Colors.green : Colors.red,
-                                borderRadius: BorderRadius.circular(4.0),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Colors.black26,
-                                    blurRadius: 4.0,
-                                    offset: Offset(2, 2),
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: GridView.builder(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 5,
+                        crossAxisSpacing: 4.0,
+                        mainAxisSpacing: 4.0,
+                      ),
+                      itemCount: 25,
+                      itemBuilder: (context, index) {
+                        bool isActive = squareStates[index];
+                        return GestureDetector(
+                          onTap: () => _toggleSquare(index),
+                          onLongPress: () {
+                            Vibration.vibrate(duration: 20);
+                            randomMapping != null
+                                ? _showDescriptionDialog(index)
+                                : null;
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: isActive ? Colors.green : Colors.red,
+                              borderRadius: BorderRadius.circular(4.0),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.black26,
+                                  blurRadius: 4.0,
+                                  offset: Offset(2, 2),
+                                ),
+                              ],
+                            ),
+                            alignment: Alignment.center,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Padding(
+                                padding: const EdgeInsets.all(4.0),
+                                child: Text(
+                                  randomMapping != null
+                                      ? shortDescriptions[
+                                          randomMapping![index]!]
+                                      : '',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
                                   ),
-                                ],
-                              ),
-                              alignment: Alignment.center,
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(4.0),
-                                  child: Text(
-                                    shortDescriptions[index],
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
+                                  textAlign: TextAlign.center,
                                 ),
                               ),
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                        );
+                      },
                     ),
-                  ],
-                )),
+                  ),
+                ],
+              ),
+            ),
           ),
+          Expanded(
+            flex: 1,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  const Text(
+                    'Bingos:',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${_calculateBingos(squareStates)}',
+                    style: const TextStyle(
+                        fontSize: 48, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.all(8.0),
+            child: const Text(
+              'Long press a square for full description',
+              style: TextStyle(fontSize: 16),
+            ),
+          )
         ],
       ),
     );
   }
+}
+
+/// Function to calculate the number of bingos
+int _calculateBingos(List<bool> squareStates) {
+  // Define bingo patterns: rows, columns, diagonals
+  const List<List<int>> bingoPatterns = [
+    // Rows
+    [0, 1, 2, 3, 4],
+    [5, 6, 7, 8, 9],
+    [10, 11, 12, 13, 14],
+    [15, 16, 17, 18, 19],
+    [20, 21, 22, 23, 24],
+    // Columns
+    [0, 5, 10, 15, 20],
+    [1, 6, 11, 16, 21],
+    [2, 7, 12, 17, 22],
+    [3, 8, 13, 18, 23],
+    [4, 9, 14, 19, 24],
+    // Diagonals
+    [0, 6, 12, 18, 24],
+    [4, 8, 12, 16, 20],
+  ];
+
+  int bingos = 0;
+
+  for (var pattern in bingoPatterns) {
+    if (pattern.every((index) => squareStates[index])) {
+      bingos++;
+    }
+  }
+
+  return bingos;
+}
+
+// Generate a random map
+Map<int, int> generateUniqueMapping() {
+  List<int> availableNumbers = List.generate(25, (index) => index);
+  Map<int, int> mapping = {};
+
+  mapping[12] = 12; // Fixed mapping
+  availableNumbers.remove(12);
+
+  final random = Random();
+  for (int i = 0; i < 25; i++) {
+    if (i == 12) continue;
+
+    int randomIndex = random.nextInt(availableNumbers.length);
+    mapping[i] = availableNumbers[randomIndex];
+    availableNumbers.removeAt(randomIndex);
+  }
+
+  return mapping;
+}
+
+// Store the map in SharedPreferences
+Future<void> storeMapInPreferences(Map<int, int> mapping) async {
+  final prefs = await SharedPreferences.getInstance();
+  // Convert keys to strings for JSON compatibility
+  String jsonString =
+      jsonEncode(mapping.map((key, value) => MapEntry(key.toString(), value)));
+  await prefs.setString('randomMapping', jsonString);
+}
+
+// Retrieve the map from SharedPreferences
+Future<Map<int, int>?> retrieveMapFromPreferences() async {
+  final prefs = await SharedPreferences.getInstance();
+  String? jsonString = prefs.getString('randomMapping');
+  if (jsonString == null) return null;
+
+  // Decode JSON and convert keys back to integers
+  Map<String, dynamic> stringKeyMap = jsonDecode(jsonString);
+  return stringKeyMap.map((key, value) => MapEntry(int.parse(key), value));
 }
